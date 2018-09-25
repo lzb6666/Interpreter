@@ -35,8 +35,8 @@ enum token {
 	tok_eof = -1,
 
 	//函数
-	tok_func=-2,
-	tok_return=-3,
+	tok_func = -2,
+	tok_return = -3,
 
 	//变量名
 	tok_identifier = -4,
@@ -48,22 +48,20 @@ enum token {
 	tok_if = -6,
 	tok_then = -7,
 	tok_else = -8,
-	tok_fi=-9,
+	tok_fi = -9,
 
-	//for语句
-	tok_for = -10,
-	tok_in = -11,
 
 	//do while
-	tok_do=-12,
-	tok_while=-13,
-	tok_done=-14,
+	tok_do = -12,
+	tok_while = -13,
+	tok_done = -14,
 
-	tok_continue=-15,
+	tok_continue = -15,
 
 	//输出
-	tok_print=-16,
+	tok_print = -16,
 
+	tok_var = -17,
 };
 
 //表达式抽象类
@@ -187,9 +185,9 @@ static int getToken() {
 		{
 			return tok_then;
 		}
-		if (identifierStr == "IF")
+		if (identifierStr == "FI")
 		{
-			return tok_if;
+			return tok_fi;
 		}
 		if (identifierStr == "DO")
 		{
@@ -210,6 +208,10 @@ static int getToken() {
 		if (identifierStr == "PRINT")
 		{
 			return tok_print;
+		}
+		if (identifierStr == "VAR")
+		{
+			return tok_var;
 		}
 		return tok_identifier;
 	}
@@ -271,32 +273,32 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 		Kind = 0;
 		getNextToken();
 		break;
-	//case tok_unary:
-	//	getNextToken();
-	//	if (!isascii(CurTok))
-	//		return LogErrorP("Expected unary operator");
-	//	FnName = "unary";
-	//	FnName += (char)CurTok;
-	//	Kind = 1;
-	//	getNextToken();
-	//	break;
-	//case tok_binary:
-	//	getNextToken();
-	//	if (!isascii(CurTok))
-	//		return LogErrorP("Expected binary operator");
-	//	FnName = "binary";
-	//	FnName += (char)CurTok;
-	//	Kind = 2;
-	//	getNextToken();
+		//case tok_unary:
+		//	getNextToken();
+		//	if (!isascii(CurTok))
+		//		return LogErrorP("Expected unary operator");
+		//	FnName = "unary";
+		//	FnName += (char)CurTok;
+		//	Kind = 1;
+		//	getNextToken();
+		//	break;
+		//case tok_binary:
+		//	getNextToken();
+		//	if (!isascii(CurTok))
+		//		return LogErrorP("Expected binary operator");
+		//	FnName = "binary";
+		//	FnName += (char)CurTok;
+		//	Kind = 2;
+		//	getNextToken();
 
-	//	// Read the precedence if present.
-	//	if (CurTok == tok_number) {
-	//		if (numVal < 1 || numVal > 100)
-	//			return LogErrorP("Invalid precedecnce: must be 1..100");
-	//		BinaryPrecedence = (unsigned)numVal;
-	//		getNextToken();
-	//	}
-	//	break;
+		//	// Read the precedence if present.
+		//	if (CurTok == tok_number) {
+		//		if (numVal < 1 || numVal > 100)
+		//			return LogErrorP("Invalid precedecnce: must be 1..100");
+		//		BinaryPrecedence = (unsigned)numVal;
+		//		getNextToken();
+		//	}
+		//	break;
 	}
 
 	if (CurTok != '(')
@@ -311,7 +313,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 	// success.
 	getNextToken(); // eat ')'.
 
-	// Verify right number of names for operator.
+					// Verify right number of names for operator.
 	if (Kind && ArgNames.size() != Kind)
 		return LogErrorP("Invalid number of operands for operator");
 
@@ -340,7 +342,7 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 		int BinOp = CurTok;
 		getNextToken(); // eat binop
 
-		// Parse the unary expression after the binary operator.
+						// Parse the unary expression after the binary operator.
 		auto RHS = ParsePrimary();
 		if (!RHS)
 			return nullptr;
@@ -422,12 +424,16 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 		return ParseNumberExpr();
 	case '(':
 		return ParseParenExpr();
-	//case tok_if:
-	//	return ParseIfExpr();
-	//case tok_for:
-	//	return ParseForExpr();
-	//case tok_var:
-	//	return ParseVarExpr();
+	case tok_if:
+		return ParseIfExpr();
+	case tok_var:
+		return ParseVarExpr();
+	case tok_while:
+		return ParseWhileExpr();
+	case tok_return:
+		return ParseReturnExpr();
+	case tok_print:
+		return ParsePrintExpr();
 	}
 }
 //static std::unique_ptr<ExprAST> ParseUnary() {
@@ -442,6 +448,94 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 //		return llvm::make_unique<UnaryExprAST>(Opc, std::move(Operand));
 //	return nullptr;
 //}
+
+
+static std::unique_ptr<ExprAST> ParseIfExpr() {
+	getNextToken();
+	auto condition = ParsePrimary();
+	if (condition)   //条件为真
+	{
+		while (1)
+		{
+			getNextToken();
+			if (CurTok == tok_else)
+			{
+				while (CurTok != tok_fi)
+					getNextToken();
+				break;
+			}
+
+			if (CurTok != tok_then)
+				fprintf(stderr, "Lack of key word: then");
+			else
+				getNextToken();
+			ParsePrimary();
+		}
+	}
+	else
+	{
+		while (1)
+		{
+			getNextToken();
+			if (CurTok == tok_else)
+			{
+				getNextToken();
+				ParsePrimary();
+			}
+			if (CurTok == tok_fi)
+				break;
+		}
+	}
+
+	return llvm::make_unique<ExprAST>(condition);
+}
+
+static std::unique_ptr<ExprAST> ParseVarExpr() {
+	getNextToken();
+	return llvm::make_unique<VariableExprAST>(CurTok);
+}
+
+static std::unique_ptr<ExprAST> ParseWhileExpr() {
+	getNextToken();
+	auto condition = ParsePrimary();
+	if (condition)
+	{
+		while (1)
+		{
+			getNextToken();
+			if (CurTok == tok_do)
+			{
+				getNextToken();
+				getNextToken();
+				ParsePrimary();
+			}
+			if (CurTok == tok_done)
+				break;
+		}
+	}
+	else
+	{
+		while (1)
+		{
+			getNextToken();
+			if (CurTok == tok_done)
+				break;
+		}
+	}
+
+	return llvm::make_unique<ExprAST>(condition);
+}
+
+static std::unique_ptr<ExprAST> ParseReturnExpr() {
+	getNextToken();
+	auto returnVal = ParsePrimary();
+	return llvm::make_unique<ExprAST>(returnVal);
+}
+
+static std::unique_ptr<ExprAST> ParsePrintExpr() {
+
+	return ParsePrimary();
+}
 
 static int GetTokPrecedence() {
 	if (!isascii(CurTok))
@@ -467,13 +561,13 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 }
 static void HandleDefinition() {
 	/*if (auto FnAST = ParseDefinition()) {
-		if (auto *FnIR = FnAST->codegen()) {
-			fprintf(stderr, "Read function definition:");
-			FnIR->print(errs());
-			fprintf(stderr, "\n");
-			TheJIT->addModule(std::move(TheModule));
-			InitializeModule();
-		}
+	if (auto *FnIR = FnAST->codegen()) {
+	fprintf(stderr, "Read function definition:");
+	FnIR->print(errs());
+	fprintf(stderr, "\n");
+	TheJIT->addModule(std::move(TheModule));
+	InitializeModule();
+	}
 	}*/
 	if (ParseDefinition())
 	{
@@ -502,6 +596,8 @@ static void HandleTopLevelExpression() {
 		getNextToken();
 	}
 }
+
+
 static void MainLoop() {
 	while (true) {
 		fprintf(stderr, "ready> ");
@@ -514,7 +610,7 @@ static void MainLoop() {
 		case tok_func:
 			HandleDefinition();
 			break;
-		/*case tok_extern:
+			/*case tok_extern:
 			HandleExtern();
 			break;*/
 		default:
@@ -536,7 +632,7 @@ int main() {
 	BinopPrecedence['-'] = 20;
 	BinopPrecedence['*'] = 40; // highest.
 
-	// Prime the first token.
+							   // Prime the first token.
 	fprintf(stderr, "ready> ");
 	getNextToken();
 
@@ -547,6 +643,6 @@ int main() {
 	// Run the main "interpreter loop" now.
 	MainLoop();
 
-  return 0;
+	return 0;
 }
 

@@ -111,7 +111,7 @@ class PrototypeAST {
 	std::string Name;
 	std::vector<std::string> Args;
 	bool IsOperator;
-	unsigned Precedence; // Precedence if a binary op.
+	unsigned Precedence; // 如果是操作符，则该位表示优先级
 
 public:
 	PrototypeAST(const std::string &Name, std::vector<std::string> Args,
@@ -268,12 +268,12 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 	switch (CurTok) {
 	default:
 		return LogErrorP("Expected function name in prototype");
-	case tok_identifier:
+	case tok_identifier://函数定义
 		FnName = identifierStr;
 		Kind = 0;
 		getNextToken();
 		break;
-		//case tok_unary:
+		//case tok_unary://一元运算符
 		//	getNextToken();
 		//	if (!isascii(CurTok))
 		//		return LogErrorP("Expected unary operator");
@@ -282,7 +282,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 		//	Kind = 1;
 		//	getNextToken();
 		//	break;
-		//case tok_binary:
+		//case tok_binary://二元运算符
 		//	getNextToken();
 		//	if (!isascii(CurTok))
 		//		return LogErrorP("Expected binary operator");
@@ -310,7 +310,7 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 	if (CurTok != ')')
 		return LogErrorP("Expected ')' in prototype");
 
-	// success.
+	// 参数读取完毕
 	getNextToken(); // eat ')'.
 
 					// Verify right number of names for operator.
@@ -321,34 +321,32 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 		BinaryPrecedence);
 }
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
-	auto Result = llvm::make_unique<NumberExprAST>(numVal);
-	getNextToken(); // consume the number
+	auto Result = llvm::make_unique<NumberExprAST>(numVal);//numVal在获取tok_num时已经被赋值
+	getNextToken(); 
 	return std::move(Result);
 }
 static std::unique_ptr<ExprAST> ParsePrimary();
 static int GetTokPrecedence();
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 	std::unique_ptr<ExprAST> LHS) {
-	// If this is a binop, find its precedence.
+	// 二元运算符获取优先级
 	while (true) {
 		int TokPrec = GetTokPrecedence();
 
-		// If this is a binop that binds at least as tightly as the current binop,
-		// consume it, otherwise we are done.
+		//与传入的当前优先级比较，优先级更高就继续执行该优先级，否则返回
 		if (TokPrec < ExprPrec)
 			return LHS;
 
-		// Okay, we know this is a binop.
+		
 		int BinOp = CurTok;
-		getNextToken(); // eat binop
+		getNextToken(); // eat二元运算符
 
-						// Parse the unary expression after the binary operator.
-		auto RHS = ParsePrimary();
+			
+		auto RHS = ParsePrimary();//获取右操作数
 		if (!RHS)
 			return nullptr;
 
-		// If BinOp binds less tightly with RHS than the operator after RHS, let
-		// the pending operator take RHS as its LHS.
+		//如果当前操作符运算级低于右边的操作符，那就把这个右操作数当作左操作数迭代此函数
 		int NextPrec = GetTokPrecedence();
 		if (TokPrec < NextPrec) {
 			RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
@@ -356,13 +354,13 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 				return nullptr;
 		}
 
-		// Merge LHS/RHS.
+		// 使用左右操作数构成二元抽象树
 		LHS =
 			llvm::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
 	}
 }
 static std::unique_ptr<ExprAST> ParseExpression() {
-	auto LHS = ParsePrimary();
+	auto LHS = ParsePrimary();//获得左运算符
 	if (!LHS)
 		return nullptr;
 
@@ -385,12 +383,12 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 	std::string IdName = identifierStr;
 
-	getNextToken(); // eat identifier.
+	getNextToken(); // 
 
 	if (CurTok != '(') // Simple variable ref.
 		return llvm::make_unique<VariableExprAST>(IdName);
 
-	// Call.
+	//函数调用
 	getNextToken(); // eat (
 	std::vector<std::unique_ptr<ExprAST>> Args;
 	if (CurTok != ')') {
@@ -414,6 +412,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
 	return llvm::make_unique<CallExprAST>(IdName, std::move(Args));
 }
+//解析｛｝内的内容主体
 static std::unique_ptr<ExprAST> ParsePrimary() {
 	switch (CurTok) {
 	default:
@@ -427,7 +426,7 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 	case tok_if:
 		return ParseIfExpr();
 	case tok_var:
-		return ParseVarExpr();
+		return ParseVarExpr();//获取变量名
 	case tok_while:
 		return ParseWhileExpr();
 	case tok_return:
@@ -495,9 +494,11 @@ static std::unique_ptr<ExprAST> ParseVarExpr() {
 	return llvm::make_unique<VariableExprAST>(CurTok);
 }
 
+//TODO:该处需完善
 static std::unique_ptr<ExprAST> ParseWhileExpr() {
 	getNextToken();
 	auto condition = ParsePrimary();
+	//TODO:添加对while判断条件为表达式的支持
 	if (condition)
 	{
 		while (1)
@@ -532,6 +533,7 @@ static std::unique_ptr<ExprAST> ParseReturnExpr() {
 	return llvm::make_unique<ExprAST>(returnVal);
 }
 
+//TODO:print解析需完善
 static std::unique_ptr<ExprAST> ParsePrintExpr() {
 
 	return ParsePrimary();
@@ -541,7 +543,7 @@ static int GetTokPrecedence() {
 	if (!isascii(CurTok))
 		return -1;
 
-	// Make sure it's a declared binop.
+	// 获取main函数中自定义的优先级
 	int TokPrec = BinopPrecedence[CurTok];
 	if (TokPrec <= 0)
 		return -1;
@@ -550,7 +552,7 @@ static int GetTokPrecedence() {
 
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
-	getNextToken(); // eat def.
+	getNextToken(); // eat func.
 	auto Proto = ParsePrototype();
 	if (!Proto)
 		return nullptr;
@@ -569,7 +571,7 @@ static void HandleDefinition() {
 	InitializeModule();
 	}
 	}*/
-	if (ParseDefinition())
+	if (ParseDefinition())//返回包含函数定义的Prototype对象
 	{
 		fprintf(stderr, "Parsed a function definition.\n");
 	}
@@ -608,7 +610,7 @@ static void MainLoop() {
 			getNextToken();
 			break;
 		case tok_func:
-			HandleDefinition();
+			HandleDefinition();//此函数没有eat函数的两个大括号
 			break;
 			/*case tok_extern:
 			HandleExtern();

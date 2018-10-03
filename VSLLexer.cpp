@@ -62,6 +62,9 @@ enum token {
 	tok_print = -16,
 
 	tok_var = -17,
+
+	//assign symbol
+	tok_assign = -18,
 };
 
 //表达式抽象类
@@ -212,6 +215,11 @@ static int getToken() {
 		if (identifierStr == "VAR")
 		{
 			return tok_var;
+		}
+		//assign symbol :=
+		if (identifierStr == ":=")
+		{
+			return tok_assign;
 		}
 		return tok_identifier;
 	}

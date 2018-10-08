@@ -286,6 +286,25 @@ static int getToken() {
 		}
 	}
 
+	//assign :=
+	if(lastChar == ':')
+	{
+		lastChar = getchar(); // eat :
+		if(lastChar != '=')
+		{
+			fprintf(stderr, "Error: lack '=' when assign.\n", );
+			return lastChar;
+		}
+		else
+		{
+			lastChar = getchar(); //eat =
+			return tok_assign;
+
+		}
+
+	}
+
+
 
 	//½áÎ²·ûºÅ
 	if (lastChar == EOF) {

@@ -63,8 +63,11 @@ enum token {
 
 	tok_var = -17,
 
-	//assign symbol
+	//assign symbol :=
 	tok_assign = -18,
+
+	//text
+	tok_text = -19,
 };
 
 //表达式抽象类
@@ -150,8 +153,8 @@ public:
 };
 
 
-static std::string identifierStr;
-static double numVal;
+static std::string identifierStr;//Filled in if tok_identifier
+static double numVal;//Filled in if tok_number
 
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
@@ -164,6 +167,7 @@ static int CurTok;
 static int getToken() {
 
 	static int lastChar = ' ';
+	//剔除空白符
 	while (isspace(lastChar)) {
 		lastChar = getchar();
 	}
@@ -175,11 +179,17 @@ static int getToken() {
 			identifierStr += lastChar;
 
 		if (identifierStr == "FUNC")
+		{
 			return tok_func;
+		}
 		if (identifierStr == "RETURN")
+		{
 			return tok_return;
+		}
 		if (identifierStr == "IF")
+		{
 			return tok_if;
+		}
 		if (identifierStr == "ELSE")
 		{
 			return tok_else;
@@ -225,21 +235,25 @@ static int getToken() {
 	}
 
 	//数字开头
-	if (isdigit(lastChar) || lastChar == '.')
+	//digit [0-9]
+	//integer {digit}+
+	if (isdigit(lastChar))
 	{
 		std::string numStr;
 		do
 		{
 			numStr += lastChar;
 			lastChar = getchar();
-		} while (isdigit(lastChar) || lastChar == '.');
-
-		//TODO:这里需要在上下文进行更多的错误检查
+		} while (isdigit(lastChar));
 
 		numVal = strtod(numStr.c_str(), 0);
 		return tok_number;
 	}
+	//注释
+	//comment "//".*
+	
 
+	
 	//结尾符号
 	if (lastChar == EOF) {
 		return tok_eof;

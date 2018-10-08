@@ -248,7 +248,7 @@ static int getToken() {
 	}
 
 	//×¢ÊÍ
-	//comment "//".*
+	//comment£º  "//".*
 	if(lastChar == '"')
 	{
 		std::string tmp;
@@ -268,12 +268,24 @@ static int getToken() {
 				return getToken();
 
 		}
-		else
+	}
+
+	//text£º \"({ascii_char}|{escaped_char})*\"
+	if(lastChar == '"')
+	{
+		std::string tmp;
+		do
 		{
-			text = tmp.substr(1, tmp.length() - 1);
+			tmp += lastChar;
+			lastChar = getchar();
+		}while(lastChar != '"');
+
+		if(tmp != "\"//"){
+			text = tmp.substr(1, tmp.length() -1);
 			return tok_text;
 		}
 	}
+
 
 	//½áÎ²·ûºÅ
 	if (lastChar == EOF) {

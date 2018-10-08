@@ -155,6 +155,7 @@ public:
 
 static std::string identifierStr;//Filled in if tok_identifier
 static double numVal;//Filled in if tok_number
+static std::string text;//Filled in if tok_text
 
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
@@ -226,11 +227,7 @@ static int getToken() {
 		{
 			return tok_var;
 		}
-		//assign symbol :=
-		if (identifierStr == ":=")
-		{
-			return tok_assign;
-		}
+		
 		return tok_identifier;
 	}
 
@@ -249,11 +246,35 @@ static int getToken() {
 		numVal = strtod(numStr.c_str(), 0);
 		return tok_number;
 	}
+
 	//×¢ÊÍ
 	//comment "//".*
-	
+	if(lastChar == '"')
+	{
+		std::string tmp;
+		do
+		{
+			tmp += lastChar;
+			lastChar = getchar();
+		}while(lastChar != '"');
 
-	
+		if(tmp == "\"//"){
+			do
+			{
+				lastChar = getchar();
+			}while(lastChar != EOF && lastChar != '\n' && lastChar != '\r');
+
+			if(lastChar != EOF)
+				return getToken();
+
+		}
+		else
+		{
+			text = tmp.substr(1, tmp.length() - 1);
+			return tok_text;
+		}
+	}
+
 	//½áÎ²·ûºÅ
 	if (lastChar == EOF) {
 		return tok_eof;

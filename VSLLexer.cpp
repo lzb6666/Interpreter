@@ -73,124 +73,11 @@ enum token {
 	tok_text = -19,
 };
 
-//===----------------------------------------------------------------------===//
-// Abstract Syntax Tree (aka Parse Tree)
-//===----------------------------------------------------------------------===//
-
-namespace{
-
-/// ExprAST - Base class for all expression nodes.
-//表达式抽象类
-class ExprAST {
-public:
-	virtual ~ExprAST() = default;
-}
-
-/// NumberExprAST - Expression class for numeric literals like "1.0".
-//数字表达式
-class NumberExprAST : public ExprAST {
-	double val;
-
-public:
-	NumberExprAST(double val) : val(val) {}
-};
-
-/// VariableExprAST - Expression class for referencing a variable, like "a".
-//变量表达式
-class VariableExprAST : public ExprAST {
-	std::string Name;
-
-public:
-	VariableExprAST(const std::string &Name) : Name(Name) {}
-};
-
-/// BinaryExprAST - Expression class for a binary operator.
-//二元表达式
-class BinaryExprAST : public ExprAST {
-	char Op;//操作符
-	std::unique_ptr<ExprAST> LHS, RHS;//左右操作数
-
-public:
-	BinaryExprAST(char op, std::unique_ptr<ExprAST> LHS,
-		std::unique_ptr<ExprAST> RHS)
-		: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-};
-
-/// CallExprAST - Expression class for function calls.
-//函数调用表达式
-class CallExprAST : public ExprAST {
-	std::string callee;//被调用函数名
-	std::vector<std::unique_ptr<ExprAST>> Args;//函数参数
-
-public:
-	CallExprAST(const std::string &callee,
-		std::vector<std::unique_ptr<ExprAST>> Args)
-		: callee(callee), Args(std::move(Args)) {}
-};
-
-/// PrototypeAST - This class represents the "prototype" for a function,
-/// which captures its name, and its argument names (thus implicitly the number
-/// of arguments the function takes).
-class PrototypeAST {
-	std::string Name;
-	std::vector<std::string> Args;
-	bool IsOperator;
-	unsigned Precedence; // 如果是操作符，则该位表示优先级
-
-public:
-	PrototypeAST(const std::string &Name, std::vector<std::string> Args,
-		bool IsOperator = false, unsigned Prec = 0)
-		: Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
-		Precedence(Prec) {}
-
-	Function *codegen();
-	const std::string &getName() const { return Name; }
-
-	bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
-	bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
-
-	char getOperatorName() const {
-		assert(isUnaryOp() || isBinaryOp());
-		return Name[Name.size() - 1];
-	}
-
-	unsigned getBinaryPrecedence() const { return Precedence; }
-};
-
-/// FunctionAST - This class represents a function definition itself.
-class FunctionAST {
-	std::unique_ptr<PrototypeAST> Proto;
-	std::unique_ptr<ExprAST> Body;
-
-public:
-	FunctionAST(std::unique_ptr<PrototypeAST> Proto,
-		std::unique_ptr<ExprAST> Body)
-		: Proto(std::move(Proto)), Body(std::move(Body)) {}
-
-	Function *codegen();
-};
-
-} // end anonymous namespace
-
-
-
 
 static std::string identifierStr;//Filled in if tok_identifier
 static double numVal;//Filled in if tok_number
 static std::string text;//Filled in if tok_text
 
-static LLVMContext TheContext;
-static IRBuilder<> Builder(TheContext);
-static std::unique_ptr<Module> TheModule;
-static std::map<std::string, AllocaInst *> NamedValues;
-static std::unique_ptr<KaleidoscopeJIT> TheJIT;
-static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
-
-/// CurTok - Provide a simple token buffer.  CurTok is the current token 
-/// the parser is looking at.  
-/// getToken - lexer and get the current tokens.
-/// getNextToken - reads another token from the lexer and updates CurTok with its results.
-static int CurTok;
 static int getToken() {
 
 	static int lastChar = ' ';
@@ -342,16 +229,138 @@ static int getToken() {
 	lastChar = getchar();
 	return thisChar;
 }
+
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (aka Parse Tree)
+//===----------------------------------------------------------------------===//
+
+namespace{
+
+/// ExprAST - Base class for all expression nodes.
+//表达式抽象类
+class ExprAST {
+public:
+	virtual ~ExprAST() = default;
+}
+
+/// NumberExprAST - Expression class for numeric literals like "1.0".
+//数字表达式
+class NumberExprAST : public ExprAST {
+	double val;
+
+public:
+	NumberExprAST(double val) : val(val) {}
+};
+
+/// VariableExprAST - Expression class for referencing a variable, like "a".
+//变量表达式
+class VariableExprAST : public ExprAST {
+	std::string Name;
+
+public:
+	VariableExprAST(const std::string &Name) : Name(Name) {}
+};
+
+/// BinaryExprAST - Expression class for a binary operator.
+//二元表达式
+class BinaryExprAST : public ExprAST {
+	char Op;//操作符
+	std::unique_ptr<ExprAST> LHS, RHS;//左右操作数
+
+public:
+	BinaryExprAST(char op, std::unique_ptr<ExprAST> LHS,
+		std::unique_ptr<ExprAST> RHS)
+		: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+};
+
+/// CallExprAST - Expression class for function calls.
+//函数调用表达式
+class CallExprAST : public ExprAST {
+	std::string callee;//被调用函数名
+	std::vector<std::unique_ptr<ExprAST>> Args;//函数参数
+
+public:
+	CallExprAST(const std::string &callee,
+		std::vector<std::unique_ptr<ExprAST>> Args)
+		: callee(callee), Args(std::move(Args)) {}
+};
+
+/// PrototypeAST - This class represents the "prototype" for a function,
+/// which captures its name, and its argument names (thus implicitly the number
+/// of arguments the function takes).
+class PrototypeAST {
+	std::string Name;
+	std::vector<std::string> Args;
+	bool IsOperator;
+	unsigned Precedence; // 如果是操作符，则该位表示优先级
+
+public:
+	PrototypeAST(const std::string &Name, std::vector<std::string> Args,
+		bool IsOperator = false, unsigned Prec = 0)
+		: Name(Name), Args(std::move(Args)), IsOperator(IsOperator),
+		Precedence(Prec) {}
+
+	Function *codegen();
+	const std::string &getName() const { return Name; }
+
+	bool isUnaryOp() const { return IsOperator && Args.size() == 1; }
+	bool isBinaryOp() const { return IsOperator && Args.size() == 2; }
+
+	char getOperatorName() const {
+		assert(isUnaryOp() || isBinaryOp());
+		return Name[Name.size() - 1];
+	}
+
+	unsigned getBinaryPrecedence() const { return Precedence; }
+};
+
+/// FunctionAST - This class represents a function definition itself.
+class FunctionAST {
+	std::unique_ptr<PrototypeAST> Proto;
+	std::unique_ptr<ExprAST> Body;
+
+public:
+	FunctionAST(std::unique_ptr<PrototypeAST> Proto,
+		std::unique_ptr<ExprAST> Body)
+		: Proto(std::move(Proto)), Body(std::move(Body)) {}
+
+	Function *codegen();
+};
+
+} // end anonymous namespace
+
+
+//===----------------------------------------------------------------------===//
+// Parser
+//===----------------------------------------------------------------------===//
+
+/// CurTok - Provide a simple token buffer.  CurTok is the current token 
+/// the parser is looking at.  
+/// getNextToken - reads another token from the lexer and updates CurTok with its results.
+static int CurTok;
 static int getNextToken() { return CurTok = getToken(); }
 
+/// GetTokPrecedence - Get the precedence of the pending binary operator token.
+static int GetTokPrecedence() {
+	if (!isascii(CurTok))
+		return -1;
 
+	int TokPrec;
+	if(CurTok == - 18)
+	{
+		TokPrec = BinopPrecedence['='];
+	}
+	else
+	{
+		// 获取main函数中自定义的优先级
+		TokPrec = BinopPrecedence[CurTok];
+	}
+	if (TokPrec <= 0)
+		return -1;
+	return TokPrec;
+}
 
-// static void InitializeModule() {
-// 	// Open a new module.
-// 	TheModule = llvm::make_unique<Module>("my cool jit", TheContext);
-// 	TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
-// }
-
+/// LogError* - These are little helper functions for error handling.
 std::unique_ptr<ExprAST> LogError(const char *Str) {
 	fprintf(stderr, "Error: %s\n", Str);
 	return nullptr;
@@ -640,17 +649,6 @@ static std::unique_ptr<ExprAST> ParsePrintExpr() {
 	return ParsePrimary();
 }
 
-static int GetTokPrecedence() {
-	if (!isascii(CurTok))
-		return -1;
-
-	// 获取main函数中自定义的优先级
-	int TokPrec = BinopPrecedence[CurTok];
-	if (TokPrec <= 0)
-		return -1;
-	return TokPrec;
-}
-
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
 	getNextToken(); // eat func.
@@ -723,25 +721,25 @@ static void MainLoop() {
 	}
 }
 int main() {
-	InitializeNativeTarget();
-	InitializeNativeTargetAsmPrinter();
-	InitializeNativeTargetAsmParser();
+	// InitializeNativeTarget();
+	// InitializeNativeTargetAsmPrinter();
+	// InitializeNativeTargetAsmParser();
 
 	// Install standard binary operators.
 	// 1 is lowest precedence.
-	BinopPrecedence['='] = 2;
+	
 	BinopPrecedence['<'] = 10;
 	BinopPrecedence['+'] = 20;
 	BinopPrecedence['-'] = 20;
 	BinopPrecedence['*'] = 40; // highest.
+	BinopPrecedence['='] = 60;
 
 	// Prime the first token.
 	fprintf(stderr, "ready> ");
 	getNextToken();
 
-	TheJIT = llvm::make_unique<KaleidoscopeJIT>();
-
-	InitializeModule();
+	// TheJIT = llvm::make_unique<KaleidoscopeJIT>();
+	// InitializeModule();
 
 	// Run the main "interpreter loop" now.
 	MainLoop();

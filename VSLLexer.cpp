@@ -28,6 +28,9 @@
 using namespace llvm;
 using namespace llvm::orc;
 
+//===----------------------------------------------------------------------===//
+// Lexer
+//===----------------------------------------------------------------------===//
 
 static std::map<char, int> BinopPrecedence;
 enum token {
@@ -70,12 +73,20 @@ enum token {
 	tok_text = -19,
 };
 
+//===----------------------------------------------------------------------===//
+// Abstract Syntax Tree (aka Parse Tree)
+//===----------------------------------------------------------------------===//
+
+namespace{
+
+/// ExprAST - Base class for all expression nodes.
 //表达式抽象类
 class ExprAST {
 public:
-	virtual ~ExprAST() {}
-};
+	virtual ~ExprAST() = default;
+}
 
+/// NumberExprAST - Expression class for numeric literals like "1.0".
 //数字表达式
 class NumberExprAST : public ExprAST {
 	double val;
@@ -84,6 +95,7 @@ public:
 	NumberExprAST(double val) : val(val) {}
 };
 
+/// VariableExprAST - Expression class for referencing a variable, like "a".
 //变量表达式
 class VariableExprAST : public ExprAST {
 	std::string Name;
@@ -92,6 +104,7 @@ public:
 	VariableExprAST(const std::string &Name) : Name(Name) {}
 };
 
+/// BinaryExprAST - Expression class for a binary operator.
 //二元表达式
 class BinaryExprAST : public ExprAST {
 	char Op;//操作符
@@ -103,16 +116,21 @@ public:
 		: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 };
 
+/// CallExprAST - Expression class for function calls.
 //函数调用表达式
 class CallExprAST : public ExprAST {
 	std::string callee;//被调用函数名
-	std::vector<std::unique_ptr<ExprAST>> args;//函数参数
+	std::vector<std::unique_ptr<ExprAST>> Args;//函数参数
 
 public:
 	CallExprAST(const std::string &callee,
-		std::vector<std::unique_ptr<ExprAST>> args)
-		: callee(callee), args(std::move(args)) {}
+		std::vector<std::unique_ptr<ExprAST>> Args)
+		: callee(callee), Args(std::move(Args)) {}
 };
+
+/// PrototypeAST - This class represents the "prototype" for a function,
+/// which captures its name, and its argument names (thus implicitly the number
+/// of arguments the function takes).
 class PrototypeAST {
 	std::string Name;
 	std::vector<std::string> Args;
@@ -139,7 +157,7 @@ public:
 	unsigned getBinaryPrecedence() const { return Precedence; }
 };
 
-
+/// FunctionAST - This class represents a function definition itself.
 class FunctionAST {
 	std::unique_ptr<PrototypeAST> Proto;
 	std::unique_ptr<ExprAST> Body;
@@ -151,6 +169,10 @@ public:
 
 	Function *codegen();
 };
+
+} // end anonymous namespace
+
+
 
 
 static std::string identifierStr;//Filled in if tok_identifier
@@ -164,6 +186,10 @@ static std::map<std::string, AllocaInst *> NamedValues;
 static std::unique_ptr<KaleidoscopeJIT> TheJIT;
 static std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 
+/// CurTok - Provide a simple token buffer.  CurTok is the current token 
+/// the parser is looking at.  
+/// getToken - lexer and get the current tokens.
+/// getNextToken - reads another token from the lexer and updates CurTok with its results.
 static int CurTok;
 static int getToken() {
 
@@ -320,11 +346,12 @@ static int getNextToken() { return CurTok = getToken(); }
 
 
 
-static void InitializeModule() {
-	// Open a new module.
-	TheModule = llvm::make_unique<Module>("my cool jit", TheContext);
-	TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
-}
+// static void InitializeModule() {
+// 	// Open a new module.
+// 	TheModule = llvm::make_unique<Module>("my cool jit", TheContext);
+// 	TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
+// }
+
 std::unique_ptr<ExprAST> LogError(const char *Str) {
 	fprintf(stderr, "Error: %s\n", Str);
 	return nullptr;
@@ -708,7 +735,7 @@ int main() {
 	BinopPrecedence['-'] = 20;
 	BinopPrecedence['*'] = 40; // highest.
 
-							   // Prime the first token.
+	// Prime the first token.
 	fprintf(stderr, "ready> ");
 	getNextToken();
 

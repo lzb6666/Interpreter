@@ -205,7 +205,7 @@ static int getToken() {
 		lastChar = getchar(); // eat :
 		if(lastChar != '=')
 		{
-			fprintf(stderr, "Error: lack '=' when assign.\n", );
+			fprintf(stderr, "Error: lack '=' when assign.\n");
 			return lastChar;
 		}
 		else
@@ -241,7 +241,7 @@ namespace{
 class ExprAST {
 public:
 	virtual ~ExprAST() = default;
-}
+};
 
 /// NumberExprAST - Expression class for numeric literals like "1.0".
 //数字表达式
@@ -252,7 +252,6 @@ public:
 	NumberExprAST(double val) : val(val) {}
 };
 
-/// VariableExprAST - Expression class for referencing a variable, like "a".
 //变量表达式
 class VariableExprAST : public ExprAST {
 	std::string Name;
@@ -261,7 +260,6 @@ public:
 	VariableExprAST(const std::string &Name) : Name(Name) {}
 };
 
-/// BinaryExprAST - Expression class for a binary operator.
 //二元表达式
 class BinaryExprAST : public ExprAST {
 	char Op;//操作符
@@ -273,7 +271,6 @@ public:
 		: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 };
 
-/// CallExprAST - Expression class for function calls.
 //函数调用表达式
 class CallExprAST : public ExprAST {
 	std::string callee;//被调用函数名
@@ -285,9 +282,6 @@ public:
 		: callee(callee), Args(std::move(Args)) {}
 };
 
-/// PrototypeAST - This class represents the "prototype" for a function,
-/// which captures its name, and its argument names (thus implicitly the number
-/// of arguments the function takes).
 class PrototypeAST {
 	std::string Name;
 	std::vector<std::string> Args;
@@ -369,6 +363,11 @@ std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
 	LogError(Str);
 	return nullptr;
 }
+///各种解析函数
+//函数声明
+static std::unique_ptr<ExprAST> ParsePrimary();
+
+//解析函数定义
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
 	std::string FnName;
 
@@ -435,8 +434,6 @@ static std::unique_ptr<ExprAST> ParseNumberExpr() {
 	getNextToken(); 
 	return std::move(Result);
 }
-static std::unique_ptr<ExprAST> ParsePrimary();
-static int GetTokPrecedence();
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 	std::unique_ptr<ExprAST> LHS) {
 	// 二元运算符获取优先级
@@ -522,29 +519,7 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 
 	return llvm::make_unique<CallExprAST>(IdName, std::move(Args));
 }
-//解析｛｝内的内容主体
-static std::unique_ptr<ExprAST> ParsePrimary() {
-	switch (CurTok) {
-	default:
-		return LogError("unknown token when expecting an expression");
-	case tok_identifier:
-		return ParseIdentifierExpr();
-	case tok_number:
-		return ParseNumberExpr();
-	case '(':
-		return ParseParenExpr();
-	case tok_if:
-		return ParseIfExpr();
-	case tok_var:
-		return ParseVarExpr();//获取变量名
-	case tok_while:
-		return ParseWhileExpr();
-	case tok_return:
-		return ParseReturnExpr();
-	case tok_print:
-		return ParsePrintExpr();
-	}
-}
+
 //static std::unique_ptr<ExprAST> ParseUnary() {
 //	// If the current token is not an operator, it must be a primary expr.
 //	if (!isascii(CurTok) || CurTok == '(' || CurTok == ',')
@@ -557,8 +532,6 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 //		return llvm::make_unique<UnaryExprAST>(Opc, std::move(Operand));
 //	return nullptr;
 //}
-
-
 static std::unique_ptr<ExprAST> ParseIfExpr() {
 	getNextToken();
 	auto condition = ParsePrimary();
@@ -599,10 +572,10 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 	return llvm::make_unique<ExprAST>(condition);
 }
 
-static std::unique_ptr<ExprAST> ParseVarExpr() {
-	getNextToken();
-	return llvm::make_unique<VariableExprAST>(CurTok);
-}
+//static std::unique_ptr<ExprAST> ParseVarExpr() {
+//	getNextToken();
+//	return llvm::make_unique<VariableExprAST>(CurTok);
+//}
 
 //TODO:该处需完善
 static std::unique_ptr<ExprAST> ParseWhileExpr() {
@@ -648,7 +621,6 @@ static std::unique_ptr<ExprAST> ParsePrintExpr() {
 
 	return ParsePrimary();
 }
-
 
 static std::unique_ptr<FunctionAST> ParseDefinition() {
 	getNextToken(); // eat func.
@@ -697,7 +669,29 @@ static void HandleTopLevelExpression() {
 		getNextToken();
 	}
 }
-
+//解析｛｝内的内容主体
+static std::unique_ptr<ExprAST> ParsePrimary() {
+	switch (CurTok) {
+	default:
+		return LogError("unknown token when expecting an expression");
+	case tok_identifier:
+		return ParseIdentifierExpr();
+	case tok_number:
+		return ParseNumberExpr();
+	case '(':
+		return ParseParenExpr();
+	case tok_if:
+		return ParseIfExpr();
+	//case tok_var:
+	//	return ParseVarExpr();//获取变量名
+	case tok_while:
+		return ParseWhileExpr();
+	case tok_return:
+		return ParseReturnExpr();
+	case tok_print:
+		return ParsePrintExpr();
+	}
+}
 
 static void MainLoop() {
 	while (true) {

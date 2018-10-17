@@ -32,12 +32,10 @@ using namespace llvm::orc;
 // Lexer
 //===----------------------------------------------------------------------===//
 static std::map<char, int> BinopPrecedence;
-static std::string identifierStr;//Filled in if tok_identifier
-static double numVal;//Filled in if tok_number
-static std::string text;//Filled in if tok_text
-  /// CurTok - Provide a simple token buffer.  CurTok is the current token 
-  /// the parser is looking at.  
-  /// getNextToken - reads another token from the lexer and updates CurTok with its results.
+static std::string identifierStr;//标识符
+static double numVal;//数字值
+static std::string text;
+//当前token
 static int CurTok;
 enum token {
 	//结束符
@@ -78,6 +76,7 @@ enum token {
 	//text
 	tok_text = -19,
 };
+//获取下一个token并返回
 static int getToken() {
 
 	static int lastChar = ' ';
@@ -224,15 +223,15 @@ static int getToken() {
 		return tok_eof;
 	}
 
-	//其他情况，直接返回该字符
+	//其他情况，直接返回该字符.{}会被直接返回
 	int thisChar = lastChar;
 	lastChar = getchar();
 	return thisChar;
 }
-
+//获取token赋值给Curtok
 static int getNextToken() { return CurTok = getToken(); }
 
-/// GetTokPrecedence - Get the precedence of the pending binary operator token.
+//获取tok运算符的优先级
 static int GetTokPrecedence() {
 	if (!isascii(CurTok))
 		return -1;
@@ -256,34 +255,32 @@ static int GetTokPrecedence() {
 //===----------------------------------------------------------------------===//
 namespace {
 
-	/// ExprAST - Base class for all expression nodes.
-	//表达式抽象类
+	//表达式抽象类，所有表达式节点的基类
 	class ExprAST {
 	public:
 		virtual ~ExprAST() = default;
 		virtual Value *codegen() = 0;
 	};
 
-	/// NumberExprAST - Expression class for numeric literals like "1.0".
-	//数字表达式
+	//数字表达式AST
 	class NumberExprAST : public ExprAST {
 		double val;
 
 	public:
 		NumberExprAST(double val) : val(val) {}
-		virtual Value *codegen();
+		Value *codegen() override;
 	};
 
-	//变量表达式
+	//变量表达式AST
 	class VariableExprAST : public ExprAST {
 		std::string Name;
 
 	public:
 		VariableExprAST(const std::string &Name) : Name(Name) {}
-		virtual Value *codegen();
+		Value *codegen() override;
 	};
 
-	//二元表达式
+	//二元表达式AST
 	class BinaryExprAST : public ExprAST {
 		char Op;//操作符
 		std::unique_ptr<ExprAST> LHS, RHS;//左右操作数
@@ -292,10 +289,10 @@ namespace {
 		BinaryExprAST(char op, std::unique_ptr<ExprAST> LHS,
 			std::unique_ptr<ExprAST> RHS)
 			: Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
-		virtual Value *codegen();
+		Value *codegen() override;
 	};
 
-	//函数调用表达式
+	//函数调用表达式AST
 	class CallExprAST : public ExprAST {
 		std::string callee;//被调用函数名
 		std::vector<std::unique_ptr<ExprAST>> Args;//函数参数
@@ -304,10 +301,10 @@ namespace {
 		CallExprAST(const std::string &callee,
 			std::vector<std::unique_ptr<ExprAST>> Args)
 			: callee(callee), Args(std::move(Args)) {}
-		virtual Value *codegen();
+		Value *codegen() override;
 	};
 
-	/// IfExprAST - Expression class for if/then/else.
+	//if结构AST
 	class IfExprAST : public ExprAST {
 		std::unique_ptr<ExprAST> Cond, Then, Else;
 
@@ -315,24 +312,21 @@ namespace {
 		IfExprAST(std::unique_ptr<ExprAST> Cond, std::unique_ptr<ExprAST> Then,
 			std::unique_ptr<ExprAST> Else)
 			: Cond(std::move(Cond)), Then(std::move(Then)), Else(std::move(Else)) {}
-		virtual Value *codegen();
+		Value *codegen() override;
 	};
 
-	/// WhileExprAST - Expression class for for/in.
+	//while结构AST
 	class WhileExprAST : public ExprAST {
-		std::string VarName;
-		std::unique_ptr<ExprAST> Start, End, Step, Body;
+		std::unique_ptr<ExprAST> While,Do;
 
 	public:
-		WhileExprAST(const std::string &VarName, std::unique_ptr<ExprAST> Start,
-			std::unique_ptr<ExprAST> End, std::unique_ptr<ExprAST> Step,
-			std::unique_ptr<ExprAST> Body)
-			: VarName(VarName), Start(std::move(Start)), End(std::move(End)),
-			Step(std::move(Step)), Body(std::move(Body)) {}
-		virtual Value *codegen();
+		WhileExprAST(std::unique_ptr<ExprAST> While,
+			std::unique_ptr<ExprAST> Do)
+			: While(std::move(While)), Do(std::move(Do)) {}
+		Value *codegen() override;
 	};
 
-
+	//函数声明AST
 	class PrototypeAST {
 		std::string Name;
 		std::vector<std::string> Args;
@@ -360,15 +354,19 @@ namespace {
 
 	};
 
-	/// FunctionAST - This class represents a function definition itself.
+	//函数定义AST
 	class FunctionAST {
 		std::unique_ptr<PrototypeAST> Proto;
-		std::unique_ptr<ExprAST> Body;
+		//std::unique_ptr<ExprAST> FuncBody;
+		std::unique_ptr<ExprAST> Return;
 
 	public:
 		FunctionAST(std::unique_ptr<PrototypeAST> Proto,
-			std::unique_ptr<ExprAST> Body)
-			: Proto(std::move(Proto)), Body(std::move(Body)) {}
+			//std::unique_ptr<ExprAST> FuncBody,
+			std::unique_ptr<ExprAST> Return)
+			: Proto(std::move(Proto)), 
+			//FuncBody(std::move(FuncBody)),
+			Return(std::move(Return)) {}
 
 		Function *codegen();
 	};
@@ -380,6 +378,14 @@ static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
 static std::map<std::string, Value *> NamedValues;
 /// LogError* - These are little helper functions for error handling.
+static int logLevel = 2;
+static void Log(const char* Str) {
+	if (logLevel>1)
+	{
+		fprintf(stderr, "function stack:%s\n", Str);
+	}
+	
+}
 std::unique_ptr<ExprAST> LogError(const char *Str) {
 	fprintf(stderr, "Error: %s\n", Str);
 	return nullptr;
@@ -447,6 +453,12 @@ Value *CallExprAST::codegen() {
 
 	return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
 }
+Value *IfExprAST::codegen() {
+	return nullptr;
+}
+Value *WhileExprAST::codegen() {
+	return nullptr;
+}
 Function *PrototypeAST::codegen() {
 	// Make the function type:  double(double,double) etc.
 	std::vector<Type*> Doubles(Args.size(),
@@ -483,7 +495,8 @@ Function *FunctionAST::codegen() {
 	NamedValues.clear();
 	for (auto &Arg : TheFunction->args())
 		NamedValues[Arg.getName()] = &Arg;
-	if (Value *RetVal = Body->codegen()) {
+	
+	if (Value *RetVal = Return->codegen()) {
 		// Finish off the function.
 		Builder.CreateRet(RetVal);
 
@@ -499,12 +512,12 @@ Function *FunctionAST::codegen() {
 //===----------------------------------------------------------------------===//
 // Parser
 //===----------------------------------------------------------------------===//
-///各种解析函数
-//函数声明
+
 static std::unique_ptr<ExprAST> ParsePrimary();
 
 //解析函数定义
 static std::unique_ptr<PrototypeAST> ParsePrototype() {
+	Log("ParsePrototype");
 	std::string FnName;
 
 	unsigned Kind = 0; // 0 = identifier, 1 = unary, 2 = binary.
@@ -518,15 +531,6 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 		Kind = 0;
 		getNextToken();
 		break;
-		//case tok_unary://一元运算符
-		//	getNextToken();
-		//	if (!isascii(CurTok))
-		//		return LogErrorP("Expected unary operator");
-		//	FnName = "unary";
-		//	FnName += (char)CurTok;
-		//	Kind = 1;
-		//	getNextToken();
-		//	break;
 		//case tok_binary://二元运算符
 		//	getNextToken();
 		//	if (!isascii(CurTok))
@@ -566,12 +570,14 @@ static std::unique_ptr<PrototypeAST> ParsePrototype() {
 		BinaryPrecedence);
 }
 static std::unique_ptr<ExprAST> ParseNumberExpr() {
+	Log("ParseNumberExpr");
 	auto Result = llvm::make_unique<NumberExprAST>(numVal);//numVal在获取tok_num时已经被赋值
 	getNextToken();
 	return std::move(Result);
 }
 static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 	std::unique_ptr<ExprAST> LHS) {
+	Log("ParseBinOpRHS");
 	// 二元运算符获取优先级
 	while (true) {
 		int TokPrec = GetTokPrecedence();
@@ -602,7 +608,9 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
 			llvm::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
 	}
 }
+//对表达式的解析
 static std::unique_ptr<ExprAST> ParseExpression() {
+	Log("ParseExpression");
 	auto LHS = ParsePrimary();//获得左运算符
 	if (!LHS)
 		return nullptr;
@@ -611,6 +619,7 @@ static std::unique_ptr<ExprAST> ParseExpression() {
 }
 
 static std::unique_ptr<ExprAST> ParseParenExpr() {
+	Log("ParseParenExpr");
 	getNextToken(); // eat (.
 	auto V = ParseExpression();
 	if (!V)
@@ -622,15 +631,16 @@ static std::unique_ptr<ExprAST> ParseParenExpr() {
 	return V;
 }
 
-
+//处理变量引用和函数调用
 static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
+	Log("ParseIdentifierExpr");
 	std::string IdName = identifierStr;
 
 	getNextToken(); // 
 
 	if (CurTok != '(') // Simple variable ref.
 		return llvm::make_unique<VariableExprAST>(IdName);
-
+	Log("Func Call");
 	//函数调用
 	getNextToken(); // eat (
 	std::vector<std::unique_ptr<ExprAST>> Args;
@@ -669,35 +679,29 @@ static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
 //	return nullptr;
 //}
 static std::unique_ptr<ExprAST> ParseIfExpr() {
+	Log("ParseIfExpr");
 	getNextToken();   //eat 'if'
+	auto Cond = ParseExpression();//解析if条件
+	if (!Cond)
+		return nullptr;
+	if (CurTok != tok_then)
+		return LogError("expected then");
+	getNextToken(); // eat then
 
-	if (CurTok)   //条件为真
-	{
-		getNextToken();   //eat 'n'
-		if (CurTok != tok_then)
-			fprintf(stderr, "Lack of key word: then");
-		getNextToken();   //eat 'Then'
-		ParsePrimary();
+	auto Then = ParseExpression();//解析then下的代码
+	if (!Then)
+		return nullptr;
 
-		if (CurTok == tok_else)
-		{
-			while (CurTok != tok_fi)
-				getNextToken();
-		}
-	}
-	else   //条件为假
-	{
-		while (CurTok != tok_else)
-			getNextToken();
-		getNextToken();
-		ParsePrimary();
-
-		while (CurTok != tok_fi)
-			getNextToken();
-	}
-
+	if (CurTok != tok_else)
+		return LogError("expected else");
 	getNextToken();
-	return llvm::make_unique<IfExprAST>();
+
+	auto Else = ParseExpression();//解析else下的代码
+	if (!Else)
+		return nullptr;
+
+	return llvm::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
+		std::move(Else));
 }
 
 //static std::unique_ptr<ExprAST> ParseVarExpr() {
@@ -705,54 +709,53 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 //	return llvm::make_unique<VariableExprAST>(CurTok);
 //}
 
-//TODO:该处需完善
 static std::unique_ptr<ExprAST> ParseWhileExpr() {
+	Log("ParseWhileExpr");
 	getNextToken();  //eat 'while'
-	auto condition = ParseExpression();
-	if (condition)
+	auto While = ParseExpression();
+	if (!While)
 	{
-		if (CurTok != tok_do)
-			fprintf(stderr, "Lack of key word: do");
-
-		getNextToken();   //eat 'do'
-		if (CurTok != '{')
-			fprintf(stderr, "Lack of key symbol: {");
-
-		getNextToken();   //eat '{'
-		ParsePrimary();
-
-		if (CurTok == '}')
-			getNextToken();   //eat '}'
-
-		if (CurTok != tok_done)
-			fprintf(stderr, "Lack of key word: done");
+		return nullptr;
 	}
-	else
-	{
-		while (1)
-		{
-			getNextToken();
-			if (CurTok == tok_done)
-				break;
-		}
-	}
-	getNextToken();   //eat 'done'
-	return llvm::make_unique<WhileExprAST>();
-}
 
-static std::unique_ptr<ExprAST> ParseReturnExpr() {
 	getNextToken();
-	auto returnVal = ParsePrimary();
-	return llvm::make_unique<ExprAST>(returnVal);
+	if (CurTok!=tok_do)
+	{
+		return LogError("缺少do");
+	}
+	getNextToken();
+	if (CurTok!='{')
+	{
+		return LogError("缺少{");//目前强制要求{}
+	}
+	auto Do = ParseExpression();
+	if (!Do)
+	{
+		return nullptr;
+	}
+	getNextToken();
+	if (CurTok!='}')
+	{
+		return LogError("缺少}");
+	}
+
+	return llvm::make_unique<WhileExprAST>(std::move(While),std::move(Do));
 }
 
-//TODO:print解析需完善
-static std::unique_ptr<ExprAST> ParsePrintExpr() {
+//static std::unique_ptr<ExprAST> ParseReturnExpr() {
+//	getNextToken();
+//	auto returnVal = ParsePrimary();
+//	return llvm::make_unique<ExprAST>(returnVal);
+//}
 
+
+static std::unique_ptr<ExprAST> ParsePrintExpr() {
+	Log("ParsePrintExpr");
 	return ParsePrimary();
 }
-
+//解析定义
 static std::unique_ptr<FunctionAST> ParseDefinition() {
+	Log("ParseDefinition");
 	getNextToken(); // eat func.
 	auto Proto = ParsePrototype();
 	if (!Proto)
@@ -763,18 +766,13 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 	return nullptr;
 }
 static void HandleDefinition() {
-	/*if (auto FnAST = ParseDefinition()) {
-	if (auto *FnIR = FnAST->codegen()) {
-	fprintf(stderr, "Read function definition:");
-	FnIR->print(errs());
-	fprintf(stderr, "\n");
-	TheJIT->addModule(std::move(TheModule));
-	InitializeModule();
-	}
-	}*/
-	if (ParseDefinition())//返回包含函数定义的Prototype对象
-	{
-		fprintf(stderr, "Parsed a function definition.\n");
+	Log("HandleDefinition");
+	if (auto FnAST = ParseDefinition()) {
+		if (auto *FnIR = FnAST->codegen()) {
+			fprintf(stderr, "Read function definition:");
+			FnIR->print(errs());
+			fprintf(stderr, "\n");
+		}
 	}
 	else {
 		// Skip token for error recovery.
@@ -782,6 +780,7 @@ static void HandleDefinition() {
 	}
 }
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
+	Log("ParseTopLevelExpr");
 	if (auto E = ParseExpression()) {
 		// Make an anonymous proto.
 		auto Proto = llvm::make_unique<PrototypeAST>("__anon_expr",
@@ -791,16 +790,22 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 	return nullptr;
 }
 static void HandleTopLevelExpression() {
-	if (ParseTopLevelExpr())
-	{
-		fprintf(stderr, "Parsed a top-level xepr\n");
+	Log("HandleTopLevelExpression");
+	if (auto FnAST = ParseTopLevelExpr()) {
+		if (auto *FnIR = FnAST->codegen()) {
+			fprintf(stderr, "Read top-level expression:");
+			FnIR->print(errs());
+			fprintf(stderr, "\n");
+		}
 	}
 	else {
+		// Skip token for error recovery.
 		getNextToken();
 	}
 }
 //解析｛｝内的内容主体
 static std::unique_ptr<ExprAST> ParsePrimary() {
+	Log("ParsePrimary");
 	switch (CurTok) {
 	default:
 		return LogError("unknown token when expecting an expression");
@@ -816,10 +821,23 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 		//	return ParseVarExpr();//获取变量名
 	case tok_while:
 		return ParseWhileExpr();
-	case tok_return:
-		return ParseReturnExpr();
+	//case tok_return:
+	//	return ParseReturnExpr();
 	case tok_print:
 		return ParsePrintExpr();
+	case '{':
+		getNextToken();
+		auto f = ParseExpression();
+		if (!f)
+		{
+			return LogError("函数定义错误");
+		}
+		if (CurTok!='}')
+		{
+			return LogError("缺少}");
+		}
+		getNextToken();
+		return f;
 	}
 }
 
@@ -829,15 +847,12 @@ static void MainLoop() {
 		switch (CurTok) {
 		case tok_eof:
 			return;
-		case ';': // ignore top-level semicolons.
+		case ';': 
 			getNextToken();
 			break;
 		case tok_func:
-			HandleDefinition();//此函数没有eat函数的两个大括号
+			HandleDefinition();
 			break;
-			/*case tok_extern:
-			HandleExtern();
-			break;*/
 		default:
 			HandleTopLevelExpression();
 			break;
@@ -845,29 +860,19 @@ static void MainLoop() {
 	}
 }
 int main() {
-	// InitializeNativeTarget();
-	// InitializeNativeTargetAsmPrinter();
-	// InitializeNativeTargetAsmParser();
-
-	// Install standard binary operators.
-	// 1 is lowest precedence.
-
+	
 	BinopPrecedence['<'] = 10;
 	BinopPrecedence['+'] = 20;
 	BinopPrecedence['-'] = 20;
-	BinopPrecedence['*'] = 40; // highest.
+	BinopPrecedence['*'] = 40; 
 	BinopPrecedence['='] = 60;
 
-	// Prime the first token.
 	fprintf(stderr, "ready> ");
 	getNextToken();
-
-	// TheJIT = llvm::make_unique<KaleidoscopeJIT>();
-	// InitializeModule();
-
-	// Run the main "interpreter loop" now.
+	TheModule = llvm::make_unique<Module>("my cool jit", TheContext);
+	
 	MainLoop();
-
+	TheModule->print(errs(), nullptr);
 	return 0;
 }
 

@@ -280,6 +280,14 @@ namespace {
 		Value *codegen() override;
 	};
 
+	class VarExprAST :public ExprAST {
+		std::string Name;
+		std::unique_ptr<ExprAST> value;
+	public:
+		VarExprAST(const std::string &Name, std::unique_ptr<ExprAST> value):Name(Name),value(std::move(value)){}
+		Value *codegen()override;
+	};
+
 	//二元表达式AST
 	class BinaryExprAST : public ExprAST {
 		char Op;//操作符
@@ -454,7 +462,48 @@ Value *CallExprAST::codegen() {
 	return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
 }
 Value *IfExprAST::codegen() {
-	return nullptr;
+	Value *CondV = Cond->codegen();
+	if (!CondV)
+		return nullptr;
+	CondV = Builder.CreateFCmpONE(
+		CondV, ConstantFP::get(TheContext, APFloat(0.0)), "ifcond");
+	Function *TheFunction = Builder.GetInsertBlock()->getParent();
+	BasicBlock *ThenBB =
+		BasicBlock::Create(TheContext, "then", TheFunction);
+	BasicBlock *ElseBB = BasicBlock::Create(TheContext, "else");
+	BasicBlock *MergeBB = BasicBlock::Create(TheContext, "ifcont");
+
+	Builder.CreateCondBr(CondV, ThenBB, ElseBB);
+	// Emit then value.
+	Builder.SetInsertPoint(ThenBB);
+
+	Value *ThenV = Then->codegen();
+	if (!ThenV)
+		return nullptr;
+
+	Builder.CreateBr(MergeBB);
+	// Codegen of 'Then' can change the current block, update ThenBB for the PHI.
+	ThenBB = Builder.GetInsertBlock();
+	// Emit else block.
+	TheFunction->getBasicBlockList().push_back(ElseBB);
+	Builder.SetInsertPoint(ElseBB);
+
+	Value *ElseV = Else->codegen();
+	if (!ElseV)
+		return nullptr;
+
+	Builder.CreateBr(MergeBB);
+	// codegen of 'Else' can change the current block, update ElseBB for the PHI.
+	ElseBB = Builder.GetInsertBlock();
+	// Emit merge block.
+	TheFunction->getBasicBlockList().push_back(MergeBB);
+	Builder.SetInsertPoint(MergeBB);
+	PHINode *PN =
+		Builder.CreatePHI(Type::getDoubleTy(TheContext), 2, "iftmp");
+
+	PN->addIncoming(ThenV, ThenBB);
+	PN->addIncoming(ElseV, ElseBB);
+	return PN;
 }
 Value *WhileExprAST::codegen() {
 	return nullptr;
@@ -490,6 +539,7 @@ Function *FunctionAST::codegen() {
 	// Create a new basic block to start insertion into.
 	BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
 	Builder.SetInsertPoint(BB);
+	
 
 	// Record the function arguments in the NamedValues map.
 	NamedValues.clear();
@@ -508,6 +558,10 @@ Function *FunctionAST::codegen() {
 	// Error reading body, remove function.
 	TheFunction->eraseFromParent();
 	return nullptr;
+}
+Value *VarExprAST::codegen() {
+	NamedValues[Name] = value->codegen();
+	return NamedValues[Name];
 }
 //===----------------------------------------------------------------------===//
 // Parser
@@ -747,7 +801,24 @@ static std::unique_ptr<ExprAST> ParseWhileExpr() {
 //	auto returnVal = ParsePrimary();
 //	return llvm::make_unique<ExprAST>(returnVal);
 //}
-
+static std::unique_ptr<ExprAST> ParseVar() {
+	getNextToken();
+	if (CurTok!= tok_identifier)
+	{
+		
+	}
+	getNextToken();
+	if (CurTok!=tok_assign)
+	{
+		numVal = 0;
+	}
+	else {
+		getNextToken();
+	}
+	auto value = ParseNumberExpr();
+	std::string name = identifierStr;
+	return llvm::make_unique<VarExprAST>(name,std::move(value));
+}
 
 static std::unique_ptr<ExprAST> ParsePrintExpr() {
 	Log("ParsePrintExpr");
@@ -760,7 +831,7 @@ static std::unique_ptr<FunctionAST> ParseDefinition() {
 	auto Proto = ParsePrototype();
 	if (!Proto)
 		return nullptr;
-
+	//
 	if (auto E = ParseExpression())
 		return llvm::make_unique<FunctionAST>(std::move(Proto), std::move(E));
 	return nullptr;
@@ -821,10 +892,10 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 		//	return ParseVarExpr();//获取变量名
 	case tok_while:
 		return ParseWhileExpr();
-	//case tok_return:
-	//	return ParseReturnExpr();
 	case tok_print:
 		return ParsePrintExpr();
+	case tok_var:
+		return ParseVar();
 	case '{':
 		getNextToken();
 		auto f = ParseExpression();
@@ -838,7 +909,9 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 		}
 		getNextToken();
 		return f;
+
 	}
+
 }
 
 static void MainLoop() {

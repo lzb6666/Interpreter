@@ -57,7 +57,6 @@ enum token {
 	tok_else = -8,
 	tok_fi = -9,
 
-
 	//do while
 	tok_do = -12,
 	tok_while = -13,
@@ -465,11 +464,16 @@ Value *IfExprAST::codegen() {
 	Value *CondV = Cond->codegen();
 	if (!CondV)
 		return nullptr;
+	//将cond与0比较
 	CondV = Builder.CreateFCmpONE(
 		CondV, ConstantFP::get(TheContext, APFloat(0.0)), "ifcond");
+	//获取当前函数
 	Function *TheFunction = Builder.GetInsertBlock()->getParent();
+	//创建三个基本块
+	//构造函数将将TheFunction插入，因此直接将then块插入当前构造函数
 	BasicBlock *ThenBB =
 		BasicBlock::Create(TheContext, "then", TheFunction);
+	//仅构造块
 	BasicBlock *ElseBB = BasicBlock::Create(TheContext, "else");
 	BasicBlock *MergeBB = BasicBlock::Create(TheContext, "ifcont");
 
@@ -500,18 +504,21 @@ Value *IfExprAST::codegen() {
 	Builder.SetInsertPoint(MergeBB);
 	PHINode *PN =
 		Builder.CreatePHI(Type::getDoubleTy(TheContext), 2, "iftmp");
-
+	//将else和then的块值都计算出来，然后根据跳转选择返回哪个值
 	PN->addIncoming(ThenV, ThenBB);
 	PN->addIncoming(ElseV, ElseBB);
 	return PN;
 }
 Value *WhileExprAST::codegen() {
+	Value * Cond = While->codegen();
+
 	return nullptr;
 }
 Function *PrototypeAST::codegen() {
 	// Make the function type:  double(double,double) etc.
 	std::vector<Type*> Doubles(Args.size(),
 		Type::getDoubleTy(TheContext));
+	//get获取一个函数类型
 	FunctionType *FT =
 		FunctionType::get(Type::getDoubleTy(TheContext), Doubles, false);
 

@@ -1,0 +1,6 @@
+FUNC f(n){
+	WHILE n
+	DO 
+	{n+1}
+	DONE
+	}

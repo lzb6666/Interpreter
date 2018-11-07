@@ -511,8 +511,26 @@ Value *IfExprAST::codegen() {
 }
 Value *WhileExprAST::codegen() {
 	Value * Cond = While->codegen();
+	if (!Cond)
+		return nullptr;
+	
+	Function *TheFunction = Builder.GetInsertBlock()->getParent();
+	BasicBlock *PreheaderBB = Builder.GetInsertBlock();
+	BasicBlock *WhileBB =
+		BasicBlock::Create(TheContext, "while", TheFunction);
+	Builder.CreateBr(WhileBB);
+	Builder.SetInsertPoint(WhileBB);
+	PHINode * Variable = Builder.CreatePHI(Type::getDoubleTy(TheContext),
+		2, "while");
+	Variable->addIncoming(Cond, PreheaderBB);
 
-	return nullptr;
+	BasicBlock *AfterBB =
+		BasicBlock::Create(TheContext, "afterloop", TheFunction);
+	Cond = Builder.CreateFCmpONE(
+		Cond, ConstantFP::get(TheContext, APFloat(0.0)), "loopcond");
+	Builder.CreateCondBr(Cond, WhileBB, AfterBB);
+	Builder.SetInsertPoint(AfterBB);
+	return Constant::getNullValue(Type::getDoubleTy(TheContext));
 }
 Function *PrototypeAST::codegen() {
 	// Make the function type:  double(double,double) etc.
@@ -760,7 +778,11 @@ static std::unique_ptr<ExprAST> ParseIfExpr() {
 	auto Else = ParseExpression();//解析else下的代码
 	if (!Else)
 		return nullptr;
-
+	if (CurTok!=tok_fi)
+	{
+		return LogError("expected fi");
+	}
+	getNextToken();
 	return llvm::make_unique<IfExprAST>(std::move(Cond), std::move(Then),
 		std::move(Else));
 }
@@ -779,27 +801,32 @@ static std::unique_ptr<ExprAST> ParseWhileExpr() {
 		return nullptr;
 	}
 
-	getNextToken();
 	if (CurTok!=tok_do)
 	{
-		return LogError("缺少do");
+		return LogError("while缺少do");
 	}
 	getNextToken();
 	if (CurTok!='{')
 	{
-		return LogError("缺少{");//目前强制要求{}
+		return LogError("while缺少{");//目前强制要求{}
 	}
+	getNextToken();
 	auto Do = ParseExpression();
 	if (!Do)
 	{
 		return nullptr;
 	}
-	getNextToken();
+	
 	if (CurTok!='}')
 	{
-		return LogError("缺少}");
+		return LogError("while缺少}");
 	}
-
+	getNextToken();
+	if (CurTok!=tok_done)
+	{
+		return LogError("while缺少done");
+	}
+	getNextToken();
 	return llvm::make_unique<WhileExprAST>(std::move(While),std::move(Do));
 }
 
@@ -912,9 +939,8 @@ static std::unique_ptr<ExprAST> ParsePrimary() {
 		}
 		if (CurTok!='}')
 		{
-			return LogError("缺少}");
+			return LogError("func缺少}");
 		}
-		getNextToken();
 		return f;
 
 	}

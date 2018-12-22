@@ -856,6 +856,34 @@ static std::unique_ptr<ExprAST> ParseVar() {
 
 static std::unique_ptr<ExprAST> ParsePrintExpr() {
 	Log("ParsePrintExpr");
+	getNextToken();  //eat "print"
+	std::string str = "";
+	while (1)
+	{
+		if (CurTok == tok_text)
+		{
+			if (text != "\n")
+			{
+				str += text;
+				getNextToken();
+			}
+			else
+			{
+				std::cout << str << std::endl;
+				getNextToken();     //eat " "\n" "
+				return llvm::make_unique<ExprAST>(str);
+			}
+		}
+		if (CurTok == 44)  //¶ººÅ ASCIIÂë
+		{
+			getNextToken();
+		}
+		if (CurTok == tok_identifier)
+		{
+			str += identifierStr;
+			getNextToken();
+		}
+	}
 	return ParsePrimary();
 }
 //½âÎö¶¨Òå
